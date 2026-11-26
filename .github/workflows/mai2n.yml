@@ -1,0 +1,50 @@
+name: Build EOS SDK Emu (Windows)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ partyvan, main, master ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            cmake_arch: x64
+            triplet: x64-windows-static
+          - arch: x86
+            cmake_arch: Win32
+            triplet: x86-windows-static
+
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install vcpkg dependencies
+        run: |
+          vcpkg install protobuf:${{ matrix.triplet }} nlohmann-json:${{ matrix.triplet }}
+
+      - name: Configure CMake
+        run: |
+          cmake -B build_${{ matrix.arch }} -G "Visual Studio 17 2022" -A ${{ matrix.cmake_arch }} `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+
+      - name: Build Release
+        run: |
+          cmake --build build_${{ matrix.arch }} --config Release --parallel
+
+      - name: Package compiled binaries
+        run: |
+          New-Item -ItemType Directory -Force -Path dist_${{ matrix.arch }}
+          Get-ChildItem -Path build_${{ matrix.arch }} -Recurse -Filter "*.dll" | Copy-Item -Destination dist_${{ matrix.arch }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eos_sdk_emu-${{ matrix.arch }}
+          path: dist_${{ matrix.arch }}/*.dll
